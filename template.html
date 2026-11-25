@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ปาร์ตี้ไต่เค้ก</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Mali:wght@400;600;700&family=Pixelify+Sans:wght@600;700&display=swap" rel="stylesheet">
+<style>{{CSS}}</style>
+</head>
+<body>
+<canvas id="bgcake" width="480" height="270"></canvas>
+<div id="bgshade"></div>
+<div id="patbg"><canvas id="patcv"></canvas></div>
+<div id="rules" style="display:none"><div class="rbox"><h2>วิธีเล่น</h2><div id="rtext"></div><button id="rclose" class="startbtn2">เข้าใจแล้ว</button></div></div>
+
+<section id="screen-menu" class="screen on">
+  <div id="m-start" class="mpage on">
+    <div class="titlebox"><small>CAKE CLIMB PARTY</small><h1>ปาร์ตี้ไต่เค้ก</h1></div>
+    <button id="btn-start-menu" class="startbtn">START</button>
+    <button id="btn-solo2" class="solobtn devbtn">เล่นคนเดียว (ทดลอง)</button>
+    <button id="btn-itemtest" class="solobtn devbtn" style="top:calc(56% + 138px)">ทดสอบไอเทมบนกระดาน (บอท 2 คน)</button>
+    <button id="btn-mgtest" class="solobtn devbtn" style="top:calc(56% + 186px)">ห้องทดสอบมินิเกม</button>
+    <button id="btn-ittest" class="solobtn devbtn" style="top:calc(56% + 234px)">ห้องทดสอบไอเทม</button>
+    <div id="ver">ver. {{VER}}</div>
+    <button id="btn-music" class="musicbtn" title="เปิด/ปิดเพลง">♫</button>
+  </div>
+  <div id="m-char" class="mpage">
+    <div class="chwrap">
+      <canvas id="chstage"></canvas>
+      <div class="chside">
+        <div class="chtab"><span>ตัวละคร</span></div>
+        <div class="chgrid" id="chgrid"></div>
+      </div>
+      <button id="ch-ok" class="startbtn">ตกลง</button>
+    </div>
+  </div>
+  <div id="m-main" class="mpage">
+    <div id="nopeer" class="warn" style="display:none">โหลดระบบเชื่อมต่อออนไลน์ไม่สำเร็จ (ต้องต่ออินเทอร์เน็ต) ตอนนี้เล่นได้เฉพาะโหมดทดลองคนเดียวค่ะ</div>
+    <div class="mrow">
+      <div class="cardL">
+        <canvas id="prevcv" width="120" height="170"></canvas>
+        <div id="skin-name" class="skinname">ลูกอม</div>
+        <input id="name-in" maxlength="12" placeholder="ชื่อเรา..." autocomplete="off">
+      </div>
+      <div class="cardR">
+        <button id="btn-create" class="roomtop">สร้างห้อง</button>
+        <div class="joincard">
+          <input id="code-in" maxlength="4" placeholder="• • • •" autocomplete="off">
+          <button id="btn-join">เข้าห้อง</button>
+        </div>
+        <button id="btn-solo" class="solobtn2 devbtn">เล่นคนเดียว (ทดลอง)</button>
+        <div id="menu-msg" class="msg"></div>
+      </div>
+    </div>
+    <button id="btn-menu-back" class="ghost backlink">‹ กลับ</button>
+    <button id="btn-rules" class="rulesbtn">วิธีเล่น</button>
+    <button id="btn-join-open" style="display:none"></button><div id="joinbox" style="display:none"></div>
+  </div>
+</section>
+
+<section id="screen-lobby" class="screen">
+  <canvas id="lobbycv"></canvas>
+  <div id="lobbylabels"></div>
+  <div class="lb-top">
+    <div class="lb-code"><span>รหัสห้อง</span><b id="lobby-code">----</b><button id="btn-copy" class="ghost">คัดลอก</button></div>
+    <button id="btn-leave" class="ghost">ออกจากห้อง</button>
+  </div>
+  <div id="plist" class="lb-players"></div>
+  <div class="lb-bottom">
+    <div id="lobby-msg" class="msg"></div>
+    <button id="btn-ready" class="readybtn">พร้อม!</button>
+    <button id="btn-start" class="readybtn go">▶ เริ่มเกม</button>
+    <div class="lb-hint">เดินเล่นด้วย W A S D</div>
+  </div>
+  <button id="btn-arena" style="display:none"></button>
+</section>
+
+<section id="screen-arena" class="screen">
+  <div id="hud"><span id="hud-info"></span><button id="btn-back" class="ghost">กลับห้องรอ</button></div>
+  <canvas id="stage" width="480" height="270"></canvas>
+  <div class="hint">เดินด้วย W A S D หรือปุ่มลูกศร</div>
+</section>
+
+<section id="screen-game" class="screen">
+  <div id="ghead"><span id="ginfo"></span><span><button id="btn-cam" class="ghost">กล้อง: ติดตาม (C)</button> <button id="btn-gback" class="ghost">กลับห้องรอ</button></span></div>
+  <div id="gplayers"></div>
+  <div id="hud-me"><div class="hm-face"><canvas id="hud-face" width="96" height="96"></canvas></div><div class="hm-rank"><span>อันดับ</span><b id="hm-rk">1</b></div></div>
+  <div id="hud-stat"><div class="hs"><img id="ic-cherry" alt=""><b id="hs-ch">0</b></div><div class="hs"><img id="ic-coin" alt=""><b id="hs-co">0</b></div><small id="hs-price"></small></div>
+  <div id="hud-rnd"><span>รอบ</span><b id="hr-n">1/4</b></div>
+  <div id="hud-rank"></div>
+  <canvas id="cake" width="480" height="270"></canvas>
+  <canvas id="cakeov" width="480" height="270"></canvas>
+  <div id="mgres" style="display:none"></div>
+  <div id="fin3" style="display:none"><canvas id="fin3gl"></canvas><canvas id="fin3cv"></canvas><button id="f3skip" class="ghost">ข้ามไปดูผล ▶</button><button id="f3back" class="readybtn" style="display:none">กลับห้องรอ</button></div>
+  <div id="gitems"></div>
+  <div id="pickui" style="display:none"><div id="pktitle"></div><div id="pkframe"><i></i><i></i><i></i><i></i></div><div id="pkname"></div><div id="pkbtns"><button id="pkprev">◀ คนก่อนหน้า</button><button id="pkok">ใช้กับคนนี้ (คลิก)</button><button id="pknext">คนถัดไป ▶</button></div><div id="pkhint">คลิกที่กรอบตัวละครเพื่อใช้ · เลื่อนล้อเมาส์หรือคลิกปุ่มข้างๆ เพื่อเปลี่ยนคน · คลิกขวาเพื่อยกเลิก</div><button id="pkcancel" class="ghost">ยกเลิก</button></div>
+  <div id="inv" style="display:none"><canvas id="invcv"></canvas><canvas id="invfx"></canvas><div id="invname"></div><div id="invdesc"></div><div id="invhint"></div><div id="invtg"></div><button id="invclose" class="ghost">ปิด (Esc / I)</button></div>
+  <div id="gshop" style="display:none"></div>
+  <div id="cherrybox" style="display:none"></div>
+  <div id="tip" style="display:none"></div>
+  <div id="gbar">
+    <div id="dice"></div>
+    <div id="gmsg">กำลังเริ่มเกม...</div>
+    <button id="btn-skip" style="display:none">ข้ามฉากเปิด ▶</button>
+    <button id="btn-roll" disabled style="display:none!important">ทอยลูกเต๋า</button>
+  </div>
+  <div class="hint">ช่อง: <b style="color:#ffd43b">+</b> ได้เหรียญ · <b style="color:#ff8787">-</b> โดนหัก · <b style="color:#b197fc">?</b> ปริศนา · <b style="color:#74c0fc">$</b> ร้านค้า · กด Space เพื่อทอย</div>
+</section>
+
+<div id="mgtest" style="display:none"><h2>ห้องทดสอบมินิเกม</h2><p>เลือกเกมเพื่อเข้าไปเล่นได้ทันที (ซ้อมคนเดียว ไม่นับคะแนน) · สีน้ำเงิน ✔ = ผ่านแล้ว · สีแดง = รอลบ · เหลือง ★ = 3D แต่ยังต้องแก้</p><div id="mgtestlist"></div><button id="btn-mgtest-close" class="solobtn2">← กลับเมนู</button></div>
+
+<div id="ittest" style="display:none"><canvas id="itcv"></canvas><canvas id="itfx"></canvas><h2>ห้องทดสอบไอเทม</h2><div id="itlist"></div><div id="itinfo"><b id="itname"></b><span id="itdesc"></span></div>
+  <div id="itbar"><button id="itplay">▶ แอนิเมชันตอนใช้</button><button id="itroll">ทอยด้วยเต๋านี้</button><button id="itside">เป้าหมาย: ขวา</button><button id="itshop">ดูในร้านค้า</button><button id="itboard">ทดสอบบนกระดาน</button><button id="itclose">ปิด</button></div></div>
+
+<section id="screen-mg" class="screen">
+  <div id="mgtitle"></div>
+  <div id="mghow"></div>
+  <canvas id="mgc3"></canvas>
+  <canvas id="mgc" width="480" height="270"></canvas>
+  <div id="mgtime"></div>
+  <div id="mgprepbar"><div id="mgprepinfo"></div><button id="btn-mgready" class="readybtn">พร้อมแข่งจริง!</button></div>
+  <div id="mgboard"></div>
+  <div id="mgtestbar" style="display:none"><button id="btn-mgt-redo" class="readybtn">เล่นใหม่</button> <button id="btn-mgt-back" class="solobtn2">← กลับไปเลือกเกม (Esc)</button></div>
+</section>
+
+<script>{{CAKEWS}}{{PATSPR}}</script>
+<script>{{CORE}}</script>
+<script>{{MINI}}</script>
+<script>{{SHARED}}</script>
+<script>{{GAME}}</script>
+<script>{{AUDIO}}</script>
+<script>{{NET}}</script>
+<script>{{RENDER}}</script>
+<script>{{GL3D}}</script>
+<script>{{MODELLOAD}}</script>
+<script>{{CHARGLB}}</script>
+<script>{{ICONS}}</script>
+<script>{{CAKE3D}}</script>
+<script>{{ITEMS3D}}</script>
+<script>{{INVVIEW}}</script>
+<script>{{UI}}</script>
+</body>
+</html>

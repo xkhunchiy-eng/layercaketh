@@ -1,0 +1,23 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1200, height: 800 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('file:///home/claude/cakeparty/dist/index.html');
+  await p.waitForTimeout(600);
+  await p.screenshot({ path: '/tmp/claude-0/w_menu.png' });
+  await p.evaluate(() => document.getElementById('btn-start-menu').click()); await p.fill('#name-in', 'ฟ้า'); await p.click('#btn-solo'); await p.waitForTimeout(400);
+  await p.screenshot({ path: '/tmp/claude-0/w_lobby.png' });
+  await p.click('#btn-start'); await p.waitForTimeout(1200);
+  await p.screenshot({ path: '/tmp/claude-0/w_intro1.png' });
+  await p.waitForTimeout(3500);
+  await p.screenshot({ path: '/tmp/claude-0/w_intro2.png' });
+  await p.waitForTimeout(5000);
+  await p.screenshot({ path: '/tmp/claude-0/w_intro3.png' });
+  await p.click('#btn-skip'); await p.waitForTimeout(1500);
+  console.log('phase', await p.evaluate(() => __cake.game.phase));
+  await p.keyboard.press('Space'); await p.waitForTimeout(500); await p.screenshot({path:'/tmp/claude-0/w_dice1.png'});
+  await p.waitForTimeout(900); await p.screenshot({path:'/tmp/claude-0/w_dice2.png'});
+  await p.waitForTimeout(1500); await p.screenshot({path:'/tmp/claude-0/w_msg.png'});
+  console.log('errors:', JSON.stringify(errs));
+  await b.close();
+})();

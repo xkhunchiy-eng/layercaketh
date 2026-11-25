@@ -1,0 +1,8 @@
+const { chromium } = require('playwright');
+(async () => {
+  const id = process.argv[2]; const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1200, height: 800 } });
+  const errs = []; p.on('pageerror', e => errs.push(e.message));
+  await p.goto('file:///home/claude/cakeparty/dist/index.html#' + id); await p.waitForTimeout(+process.argv[3] || 3500);
+  await p.screenshot({ path: '/tmp/claude-0/b_' + id + '.png' });
+  console.log('errors', JSON.stringify(errs)); await b.close();
+})();
