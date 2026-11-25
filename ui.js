@@ -206,7 +206,7 @@
         else if (m.t === 'closed') closedMsg = m.why === 'kicked' ? 'เจ้าของห้องให้ออกจากห้องค่ะ' : m.why === 'host-left' ? 'เจ้าของห้องออกไปแล้วค่ะ ห้องถูกปิด' : 'ห้องถูกปิดแล้วค่ะ';
         else if (m.t === 'lobby') renderLobby(m);
         else if (m.t === 'game' && m.s) { if (curScreen() !== 'game' && curScreen() !== 'mg') show('game'); onGame(m.s); }
-        else if (m.t === 'sim' && m.s) S.simSnap = m.s;
+        else if (m.t === 'sim' && m.s) { S.simSnap = m.s; simPush(m.s); }
         else if (m.t === 'state' && Array.isArray(m.p)) {
           m.p.forEach(function (r) { S.targets[r[0]] = { x: r[1], z: r[2], h: r[3], mv: !!r[4], walk: r[5] }; });
         }
@@ -287,7 +287,7 @@
       var prep = st.phase === 'mgprep';
       if (!S.mg || S.mgSeed !== st.mg.seed) {
         var shared = st.mg.kind === 'shared', def = (shared ? CakeShared.GAMES : CakeMini.GAMES)[st.mg.id]; if (!def) return;
-        S.mgSeed = st.mg.seed; S.simSnap = null;
+        S.mgSeed = st.mg.seed; S.simSnap = null; S.simA = S.simB = null;
         S.mg = shared ? { shared: true, id: st.mg.id, def: def, dur: st.mg.dur, finished: false } : { id: st.mg.id, def: def, dur: st.mg.dur, sent: -1, lastSend: 0, finished: false };
         S.mg.prep = true; S.mg.readySent = false; newPractice(S.mg);
         $('mgtitle').textContent = def.name; $('mghow').textContent = def.how;
@@ -566,17 +566,35 @@
     if (cols) cols.forEach(function (c, i) { C.SLOT_COLORS[i] = C.PALETTE[c]; });
     else if (S.lobby) S.lobby.players.forEach(function (p) { C.SLOT_COLORS[p.slot] = C.PALETTE[p.col || 0]; });
   }
+  // ทำให้ตำแหน่งผู้เล่นออนไลน์เคลื่อนที่นุ่มนวล: เก็บข้อมูล 2 ชุดล่าสุด แล้วไล่ค่าตำแหน่งระหว่างกัน (เห็นช้ากว่าจริงประมาณ 1 ช่วงข้อมูล)
+  function simPush(sn) {
+    var now = performance.now();
+    if (S.simB) { var gap = now - S.simB.t; S.simGap = Math.max(25, Math.min(140, (S.simGap || 40) * 0.8 + gap * 0.2)); }
+    S.simA = S.simB; S.simB = { s: sn, t: now };
+  }
+  function simView() {
+    var B = S.simB, A = S.simA; if (!B) return S.simSnap; if (!A || !A.s.P || !B.s.P || A.s.ph !== B.s.ph) return B.s;
+    var u = Math.max(0, Math.min(1, (performance.now() - B.t) / (S.simGap || 40))), out = {}, k;
+    for (k in B.s) out[k] = B.s[k];
+    out.P = B.s.P.map(function (p) {
+      var q = null; for (var i = 0; i < A.s.P.length; i++) if (A.s.P[i][0] === p[0]) { q = A.s.P[i]; break; }
+      if (!q || typeof p[1] !== 'number' || typeof p[2] !== 'number' || typeof q[1] !== 'number' || typeof q[2] !== 'number') return p;
+      if (Math.abs(p[1] - q[1]) > 60 || Math.abs(p[2] - q[2]) > 60) return p;
+      var r = p.slice(); r[1] = q[1] + (p[1] - q[1]) * u; r[2] = q[2] + (p[2] - q[2]) * u; return r;
+    });
+    return out;
+  }
   function drawShared(now) {
     var m = S.mg, g = $('mgc').getContext('2d'), t = now - m.startAt;
     if (m.use3d) {
-      var sn0 = isHost() ? (S.room && S.room.game && S.room.game.sim ? S.room.game.sim.snapshot() : S.simSnap) : S.simSnap; if (sn0) S.simSnap = sn0;
+      var sn0 = isHost() ? (S.room && S.room.game && S.room.game.sim ? S.room.game.sim.snapshot() : S.simSnap) : simView(); if (sn0) S.simSnap = sn0;
       drawMg3(m, sn0, now, 'play', t < 0 ? -t / 1000 : 0); return;
     }
     if (t < 0) {
       g.fillStyle = '#1a0f2b'; g.fillRect(0, 0, 480, 270); g.font = 'bold 80px TAGBA, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
       g.fillStyle = '#ffe066'; g.fillText(String(Math.ceil(-t / 1000)), 240, 135); $('mgtime').textContent = 'เตรียมตัว...'; return;
     }
-    var snap = isHost() ? (S.room && S.room.game && S.room.game.sim ? S.room.game.sim.snapshot() : S.simSnap) : S.simSnap;
+    var snap = isHost() ? (S.room && S.room.game && S.room.game.sim ? S.room.game.sim.snapshot() : S.simSnap) : simView();
     if (!snap) return;
     S.simSnap = snap;
     var st = S.game, env = { me: S.slot, names: st ? st.names : {}, sprite: spriteFor };
