@@ -112,7 +112,7 @@ function onMessage(ws, st, text) {
     const kw = kid !== null ? rec.conns.get(kid) : null;
     if (kw) { rec.conns.delete(kid); try { room.removePlayer(kid); } catch (e) {} try { kw.send(JSON.stringify({ t: 'closed', why: 'kicked' })); } catch (e) {} try { kw.close(); } catch (e) {} }
   }
-  else if (m.t === 'ping') ws.send('{"t":"pong"}');
+  else if (m.t === 'ping') ws.send(JSON.stringify({ t: 'pong', c: m.c }));
   else room.handle(id, m);
 }
 function onClose(st) {
