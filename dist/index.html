@@ -512,6 +512,15 @@ body:has(#m-start.on) .titlebox small{color:#ffe3f0}
 #rules h2{margin:0 0 10px;text-align:center;color:#d6336c}
 #rules .ritem{display:flex;gap:12px;margin:8px 0;line-height:1.35}#rules .ritem b{flex:0 0 84px;color:#d6336c}
 #rules .startbtn2{display:block;margin:14px auto 0}
+
+/* เตือนถึงตาแล้วยังไม่ทอย: ไอคอนกระเป๋าเรืองแสง + ปุ่ม E เด้ง (เริ่มแรงขึ้นหลังผ่านไป 3 วินาที) */
+#gitems .invpill{position:relative}
+#gitems .invpill .ring{position:absolute;inset:-6px;border-radius:50%;pointer-events:none;opacity:0;box-shadow:0 0 0 3px #ffe066,0 0 24px 10px #ffd23f99}
+#gitems .invpill.turn img{filter:drop-shadow(0 0 7px #ffe066)}
+#gitems .invpill.turn .ring{animation:ringp 1.1s ease-in-out 3s infinite}
+#gitems .invpill.turn .ek{color:#ffe066;animation:ekb 1.1s ease-in-out 3s infinite}
+@keyframes ringp{0%,100%{opacity:0;transform:scale(.85)}50%{opacity:1;transform:scale(1.12)}}
+@keyframes ekb{0%,100%{transform:translateX(-50%)}50%{transform:translateX(-50%) translateY(-7px) scale(1.2)}}
 .devbtn{display:none!important}</style>
 </head>
 <body>
@@ -760,6 +769,8 @@ body:has(#m-start.on) .titlebox small{color:#ffe3f0}
     } else if (msg.t === 'skip') {
       var ps = this.players.get(id);
       if (ps && this.game) this.game.skipIntro(ps.slot);
+    } else if (msg.t === 'ping') {
+      this.send(id, { t: 'pong', c: msg.c });
     } else if (msg.t === 'in') {
       var pi = this.players.get(id);
       if (pi && this.game) this.game.simInput(pi.slot, { x: msg.x, y: msg.y, a: msg.a, ax: msg.ax, ay: msg.ay });
@@ -2173,6 +2184,52 @@ body:has(#m-start.on) .titlebox small{color:#ffe3f0}
   return { GAMES: GAMES, IDS: Object.keys(GAMES) };
 });
 </script>
+<script>/* ทำนายตำแหน่งตัวเองในมินิเกมสนามร่วมแบบออนไลน์ (ลดอาการหน่วง)
+   รันซิมเดียวกับเซิร์ฟเวอร์ในเครื่องด้วยปุ่มที่เรากดเอง แล้วเทียบกับตำแหน่งจริงจากเซิร์ฟเวอร์ ณ เวลาเดียวกัน
+   ถ้าต่างกันมาก (เช่นโดนชน/ติดสตัน) จะกลับไปใช้ตำแหน่งจากเซิร์ฟเวอร์ชั่วคราวจนกว่าจะตรงกันอีกครั้ง */
+(function (root) {
+  'use strict';
+  var P = {};
+  function ownOf(snap, slot) {
+    var L = snap && snap.P; if (!L) return null;
+    for (var i = 0; i < L.length; i++) if (L[i][0] === slot && typeof L[i][1] === 'number' && typeof L[i][2] === 'number') return L[i];
+    return null;
+  }
+  P.create = function (def, order, seed, slot) {
+    var sim; try { sim = def.make(order.slice(), seed); } catch (e) { return null; }
+    return { sim: sim, slot: slot, hist: [], c: [0, 0], ok: true, last: 0, x: 0, y: 0, has: false, dead: false };
+  };
+  P.input = function (o, inp) { if (o && !o.dead) try { o.sim.input(o.slot, inp); } catch (e) { o.dead = true; } };
+  P.frame = function (o, now, running) {
+    if (!o || o.dead) return;
+    var dt = Math.min(0.05, Math.max(0, (now - (o.last || now)) / 1000)); o.last = now;
+    if (!running) return;
+    try {
+      o.sim.tick(dt);
+      var e = ownOf(o.sim.snapshot(), o.slot); if (!e) { o.has = false; return; }
+      o.x = e[1]; o.y = e[2]; o.has = true; o.hist.push([now, o.x, o.y]); if (o.hist.length > 120) o.hist.shift();
+    } catch (er) { o.dead = true; }
+  };
+  function at(o, t) {
+    var h = o.hist, n = h.length; if (!n) return null;
+    if (t <= h[0][0]) return [h[0][1], h[0][2]];
+    for (var i = n - 1; i > 0; i--) if (h[i - 1][0] <= t) { var a = h[i - 1], b = h[i], u = b[0] > a[0] ? (t - a[0]) / (b[0] - a[0]) : 1; u = Math.max(0, Math.min(1, u)); return [a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u]; }
+    return [h[n - 1][1], h[n - 1][2]];
+  };
+  // เรียกเมื่อได้ snapshot จากเซิร์ฟเวอร์ rtt = เวลาไป-กลับ (มิลลิวินาที)
+  P.onSnap = function (o, snap, now, rtt) {
+    if (!o || o.dead || !o.has) return;
+    var s = ownOf(snap, o.slot), p = at(o, now - rtt); if (!s || !p) return;
+    var ex = s[1] - p[0], ey = s[2] - p[1], m = Math.hypot(ex, ey);
+    if (o.ok) { if (m > 30) o.ok = false; } else if (m < 12) { o.ok = true; o.c = [ex, ey]; }
+    if (o.ok) { o.c[0] += (ex - o.c[0]) * 0.4; o.c[1] += (ey - o.c[1]) * 0.4; }
+  };
+  // ตำแหน่งที่ควรแสดงของตัวเรา หรือ null ถ้าให้ใช้ของเซิร์ฟเวอร์
+  P.view = function (o) { return o && !o.dead && o.has && o.ok ? [o.x + o.c[0], o.y + o.c[1]] : null; };
+  root.CakePred = P;
+})(typeof self !== 'undefined' ? self : globalThis);
+if (typeof module === 'object' && module.exports) module.exports = (typeof self !== 'undefined' ? self : globalThis).CakePred;
+</script>
 <script>/* เกมหลัก: ไต่เค้ก 24 ช่อง ผลัดกันทอยเต๋า ซื้อเชอร์รี่ 4 รอบ
    ลอจิกล้วน (ไม่แตะ DOM/เครือข่าย) ให้เครื่องเจ้าของห้องเป็นผู้ตัดสิน */
 (function (root, factory) {
@@ -2182,7 +2239,7 @@ body:has(#m-start.on) .titlebox small{color:#ffe3f0}
   'use strict';
 
   var G = Object.freeze({
-    TOP: 24, ROUNDS: 4, CHERRY_PRICE: 70, CHERRY_POINTS: 10, START_COINS: 10,
+    TOP: 24, ROUNDS: 4, CHERRY_PRICE: 40, CHERRY_POINTS: 10, START_COINS: 10,
     COIN_GAIN: 2, COIN_LOSS: 3, MINI_REWARDS: [10, 7, 4, 2], RICH_BONUS: 3, AWARD_COUNT: 5,
     DICE_TIME: 2.5, RESULT_TIME: 3.6, CHERRY_TIME: 86400, CHERRY_ANIM: 4.5, PREP_TIME: 40, TURN_TIME: 86400, SHOP_TIME: 86400, INTRO_TIME: 27, INTRO_FAST: 17, STEP_TIME: 0.5,
     COUNTS: { coin: 5, minus: 3, mystery: 3, shop: 2 }   // ที่เหลือเป็นช่องธรรมดา
@@ -2364,6 +2421,7 @@ body:has(#m-start.on) .titlebox small{color:#ffe3f0}
     ev.cd = this.coins.map(function (c, i) { return c - c0[i]; }); ev.tile = to !== from ? this.layout[to] : null; ev.evt = this._evt; ev.gift = this._gift;
     var effect = to !== from && (this.layout[to] !== 'plain' || ev.via >= 0 || ev.back || to === G.TOP) && ev.cherry !== 'ask';
     ev.steps = steps;
+    if ((ev.evt === 'slide' || ev.evt === 'wind') && ev.via >= 0) extra = 1.5 + Math.abs(to - this.pos[slot]) / 2.6 + 1.5 - G.RESULT_TIME;   // ค้างที่ช่องที่ลง 1.5 วิ -> เดินถอย/พุ่งทีละช่อง -> พักอีกนิด
     // ทอยเต๋าก่อน -> เดิน -> หยุดโชว์ผลช่องที่ลง -> ค่อยไปต่อ
     this.phase = 'busy'; this.timer = G.DICE_TIME + steps * G.STEP_TIME + (effect ? G.RESULT_TIME : 1.0) + extra;
     this.onChange();
@@ -2981,7 +3039,7 @@ var CakeNet = (function () {
     try { ws = new WebSocket(serverUrl()); } catch (e) { setTimeout(function () { fail('ที่อยู่เซิร์ฟเวอร์ไม่ถูกต้องค่ะ'); }, 0); return api; }
     timer = setTimeout(function () { fail('ต่อเซิร์ฟเวอร์เกมไม่ได้ค่ะ (หมดเวลา) ตรวจว่าเซิร์ฟเวอร์เปิดอยู่และใส่ที่อยู่ถูกต้อง'); }, 15000);
     ws.onopen = function () { opened = true; clearTimeout(timer); ping = setInterval(function () { api.send({ t: 'ping' }); }, 20000); cb.onOpen(api); };
-    ws.onmessage = function (e) { var m; try { m = JSON.parse(e.data); } catch (x) { return; } if (m && m.t === 'pong') return; cb.onMessage(m); };
+    ws.onmessage = function (e) { var m; try { m = JSON.parse(e.data); } catch (x) { return; } if (m && m.t === 'pong' && typeof m.c !== 'number') return; cb.onMessage(m); };
     ws.onclose = function () { clearTimeout(timer); clearInterval(ping); if (done) return; done = true; if (opened) cb.onClose(); else cb.onError('ต่อเซิร์ฟเวอร์เกมไม่ได้ค่ะ ลองใหม่อีกครั้ง'); };
     ws.onerror = function () { /* onclose จะแจ้งเอง */ };
     return api;
@@ -6258,7 +6316,7 @@ var Cake3D = (function () {
 
   function cleanup() {
     if (S.net) { try { S.net.close(); } catch (e) {} }
-    S.mode = null; S.owner = false; S.room = null; S.net = null; S.slot = -1; S.targets = {}; S.shown = {}; S.lbEls = {}; S.itemCount = undefined; if ($('lobbylabels')) $('lobbylabels').textContent = '';
+    S.mode = null; S.owner = false; S.room = null; S.net = null; S.slot = -1; S.targets = {}; S.shown = {}; S.pred = null; S.lbEls = {}; S.itemCount = undefined; if ($('lobbylabels')) $('lobbylabels').textContent = '';
     S.shopOn = false; S.rolling = false; S.diceMod = ''; S.testItems = false; S.fxSeq = undefined; S.prevCoins = null; S.game = null; S.gameInit = false; S.useSeen = -1; S.aud = null; S.audPl = undefined; S.spec = false; S.seenSeq = 0; S.idx = {}; S.override = {}; S.cut = null; S.hold = {}; S.iceHold = {}; S.invTg = null;
   }
   function toMenu(msg) { cleanup(); show('menu'); setMsg('menu-msg', msg); }
@@ -6286,7 +6344,8 @@ var Cake3D = (function () {
         else if (m.t === 'closed') closedMsg = m.why === 'kicked' ? 'เจ้าของห้องให้ออกจากห้องค่ะ' : m.why === 'host-left' ? 'เจ้าของห้องออกไปแล้วค่ะ ห้องถูกปิด' : 'ห้องถูกปิดแล้วค่ะ';
         else if (m.t === 'lobby') renderLobby(m);
         else if (m.t === 'game' && m.s) { if (curScreen() !== 'game' && curScreen() !== 'mg') show('game'); onGame(m.s); }
-        else if (m.t === 'sim' && m.s) { S.simSnap = m.s; simPush(m.s); }
+        else if (m.t === 'sim' && m.s) { S.simSnap = m.s; simPush(m.s); if (S.mg && S.mg.pred && window.CakePred) CakePred.onSnap(S.mg.pred, m.s, performance.now(), S.rtt || 100); }
+        else if (m.t === 'pong' && typeof m.c === 'number') { var rt = performance.now() - m.c; if (rt > 0 && rt < 3000) S.rtt = S.rtt ? S.rtt * 0.7 + rt * 0.3 : rt; }
         else if (m.t === 'state' && Array.isArray(m.p)) {
           m.p.forEach(function (r) { S.targets[r[0]] = { x: r[1], z: r[2], h: r[3], mv: !!r[4], walk: r[5] }; });
         }
@@ -6344,6 +6403,7 @@ var Cake3D = (function () {
       S.seenSeq = st.last.seq;
       if (!st.last.teleport) { S.diceUntil = performance.now() + 700; S.diceT0 = performance.now(); S.diceVal = st.last.v; S.diceMod = st.last.mod || ''; S.diceArr = st.last.dice || null; S.diceSeed = (st.last.seq * 7919 + (st.last.v | 0) * 31) | 0; S.holdSlot = st.last.slot; S.holdUntil = performance.now() + C_DICE_MS; }
       scheduleFx(st, performance.now()); audRoll(st);
+      S.slideSlow = {}; S.backAt = {};
       if (st.last.via >= 0 && st.last.slot >= 0) S.override[st.last.slot] = st.last.via;
     }
     if (st.phase === 'intro' && S.introRound !== st.round) { S.introRound = st.round; S.introAt = performance.now(); S.skipSent = false; S.camSnap = true; }
@@ -6652,7 +6712,17 @@ var Cake3D = (function () {
     if (S.simB) { var gap = now - S.simB.t; S.simGap = Math.max(25, Math.min(140, (S.simGap || 40) * 0.8 + gap * 0.2)); }
     S.simA = S.simB; S.simB = { s: sn, t: now };
   }
-  function simView() {
+  function simView() { return ownFix(simView0()); }
+  // แทนตำแหน่งตัวเองด้วยค่าที่ทำนายไว้ (ถ้ามี) เพื่อให้ขยับทันทีที่กดปุ่ม
+  function ownFix(v) {
+    var m = S.mg; if (!v || !v.P || !m || !m.pred || !window.CakePred) return v;
+    var q = CakePred.view(m.pred); if (!q) return v;
+    for (var i = 0; i < v.P.length; i++) if (v.P[i][0] === S.slot) {
+      var out = {}, k; for (k in v) out[k] = v[k]; out.P = v.P.slice(); var r = v.P[i].slice(); r[1] = q[0]; r[2] = q[1]; out.P[i] = r; return out;
+    }
+    return v;
+  }
+  function simView0() {
     var B = S.simB, A = S.simA; if (!B) return S.simSnap; if (!A || !A.s.P || !B.s.P || A.s.ph !== B.s.ph) return B.s;
     var u = Math.max(0, Math.min(1, (performance.now() - B.t) / (S.simGap || 40))), out = {}, k;
     for (k in B.s) out[k] = B.s[k];
@@ -7220,7 +7290,7 @@ var Cake3D = (function () {
     var key = mine.length + '|' + myTurn + '|' + fresh;   // ไม่สร้างปุ่มกระเป๋าใหม่ทุกครั้งที่สถานะอัปเดต (ไม่งั้นกดค้างแล้วปุ่มถูกแทนที่ คลิกไม่ติด)
     if (box.dataset.k === key && box.firstChild) { $('tip').style.display = 'none'; if (S.invOpen) invSync(); return; }
     box.dataset.k = key; box.textContent = ''; $('tip').style.display = 'none';
-    var ip = document.createElement('div'); ip.className = 'invpill' + (myTurn || fresh ? ' fresh' : '');
+    var ip = document.createElement('div'); ip.className = 'invpill' + (myTurn || fresh ? ' fresh' : '') + (myTurn ? ' turn' : ''); if (myTurn) { var rg = document.createElement('u'); rg.className = 'ring'; ip.appendChild(rg); }
     var bi = document.createElement('img'); bi.src = hudIcon('bag'); ip.appendChild(bi); var ek = document.createElement('b'); ek.className = 'ek'; ek.textContent = 'E'; ip.appendChild(ek);
     if (mine.length) { var cn = document.createElement('i'); cn.className = 'cnt'; cn.textContent = mine.length; ip.appendChild(cn); }
     ip.title = myTurn ? 'กด E เปิดเมนู · ทอยลูกเต๋า' : 'กด E เปิดเมนู'; S.dieLbl = ip;
@@ -7277,7 +7347,7 @@ var Cake3D = (function () {
     S.inv.tgMark = function () { if (!S.invTg || !S.tgView || !S.tgView.pr) return null; var cv = S.tgView, tp = cv.tokPos && cv.tokPos[S.invTg.list[S.invTg.i]]; if (!tp) return null; var p = cv.pr(tp[0], tp[1] + 1.5, tp[2]); return p ? [p[0] / cv.W, p[1] / cv.H] : null; };
     $('invcv').addEventListener('wheel', function (e) {
       e.preventDefault(); if (S.inv.use || S.spec || S.shopOn) return;
-      S.inv.move(e.deltaY > 0 ? 1 : -1); invSync();
+      wheelStep(e, function (d) { S.inv.move(d); invSync(); });
     }, { passive: false });
     $('invcv').addEventListener('mousemove', function (e) { if (!S.shopOn || !S.inv.shop) return; var r = $('invcv').getBoundingClientRect(), h = S.inv.shopHit((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); if (h !== S.inv.shop.hover) { S.inv.shop.hover = h; shopText(S.game); } });
     $('invcv').addEventListener('click', function (e) {
@@ -7288,6 +7358,13 @@ var Cake3D = (function () {
       if (!S.inv.info) { S.inv.info = true; invSync(); return; }
       invTryUse();
     });
+  }
+  // ล้อเมาส์: 1 ก๊อกเลื่อน 1 ช่องเท่านั้น (เมาส์/ทัชแพดบางแบบส่งหลายอีเวนต์ต่อ 1 ก๊อก ทำให้เลื่อนข้ามไปอันสุดท้าย)
+  var WH = { acc: 0, t: 0, last: 0 };
+  function wheelStep(e, fn) {
+    var n = performance.now(), dy = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 300 : 1);
+    if (n - WH.t > 250) WH.acc = 0; WH.t = n; WH.acc += dy;
+    if (Math.abs(WH.acc) >= 50 && n - WH.last > 220) { fn(WH.acc > 0 ? 1 : -1); WH.acc = 0; WH.last = n; }
   }
   function openInv() {
     var st = S.game; if (!st || BAD_PH.test(st.phase) || S.spec || S.shopOn || st.phase === 'shop') return; ensureInv();
@@ -7313,7 +7390,7 @@ var Cake3D = (function () {
     var w = function (id, f) { var el = $(id); if (el) el.onclick = f; };
     w('pkframe', pickOk); var pu0 = $('pickui'); if (pu0) pu0.addEventListener('contextmenu', function (e) { e.preventDefault(); pickBack(); });
     w('pkprev', function () { pickMove(-1); }); w('pknext', function () { pickMove(1); }); w('pkok', pickOk); w('pkcancel', pickBack);
-    var pu = $('pickui'); if (pu) pu.addEventListener('wheel', function (e) { e.preventDefault(); pickMove(e.deltaY > 0 ? 1 : -1); }, { passive: false });
+    var pu = $('pickui'); if (pu) pu.addEventListener('wheel', function (e) { e.preventDefault(); wheelStep(e, pickMove); }, { passive: false });
   })();
   function invSync() {
     var st = S.game; if (S.spec) return; if (!st || BAD_PH.test(st.phase)) { closeInv(); return; }
@@ -7391,19 +7468,23 @@ var Cake3D = (function () {
   function logic() {
     var now = performance.now(), dt = Math.min((now - (S.lastTick || now)) / 1000, 5); S.lastTick = now;
     if (S.rolling && (now - S.diceT0 > 2600 || curScreen() !== 'game')) { S.rolling = false; if (S.inv) S.inv.roll = null; if (!S.spec && !S.invOpen && $('inv')) $('inv').style.display = 'none'; }   // กันตัวเลขทอยเต๋าค้างจอ
-    var inp = readInput(); if (curScreen() === 'lobby') inp = [inp[0], -inp[1]];   // กล้องห้องรอมองจากด้านหน้า W = เดินขึ้นจอ
+    var inp = readInput(); if (curScreen() === 'lobby') inp = [inp[0], -inp[1]]; S.curInp = inp;   // กล้องห้องรอมองจากด้านหน้า W = เดินขึ้นจอ
     if (isHost() && S.room) {
       S.room.setInput('host', inp[0], inp[1]);
       while (dt > 0) { var step = Math.min(dt, 0.1); S.room.tick(step); dt -= step; }
       S.bAccum += (now - (S.lastB || now)) / 1000; S.lastB = now;
       if (S.bAccum >= 0.066) { S.bAccum = 0; if (S.mode === 'host' && (S.room.phase === 'arena' || S.room.phase === 'lobby')) S.room.broadcastState(); }
     }
+    if (S.net && !isHost() && now - (S.lastPing || 0) > 1500) { S.lastPing = now; try { S.net.send({ t: 'ping', c: now }); } catch (e) {} }
     if (curScreen() === 'mg' && S.mg && S.mg.shared && now - S.mg.startAt > -500) {
       var ii = mgInput(); ii.x = Math.round(ii.x * 20) / 20; ii.y = Math.round(ii.y * 20) / 20;
       if (isHost()) { if (S.room && S.room.game) S.room.game.simInput(S.slot, ii); }
       else if (S.net) {
         var k2 = ii.x + ',' + ii.y + ',' + ii.a + ',' + ii.ax + ',' + ii.ay;
-        if ((k2 !== S.lastIn2 && now - S.lastSend2 > 45) || now - S.lastSend2 > 250) { S.net.send({ t: 'in', x: ii.x, y: ii.y, a: ii.a, ax: ii.ax, ay: ii.ay }); S.lastIn2 = k2; S.lastSend2 = now; }
+        var mp = S.mg;
+        if (window.CakePred && !mp.prep && !mp.pred && !mp.predTry && S.game && S.game.order && S.mgSeed) { mp.predTry = true; mp.pred = CakePred.create(mp.def, S.game.order, S.mgSeed, S.slot); }
+        if ((k2 !== S.lastIn2 && now - S.lastSend2 > 45) || now - S.lastSend2 > 250) { S.net.send({ t: 'in', x: ii.x, y: ii.y, a: ii.a, ax: ii.ax, ay: ii.ay }); if (mp.pred) CakePred.input(mp.pred, ii); S.lastIn2 = k2; S.lastSend2 = now; }
+        if (mp.pred) CakePred.frame(mp.pred, now, now >= mp.startAt && !mp.prep);
       }
     }
     if (!isHost() && S.mode === 'guest' && S.net && S.room === null) {
@@ -7412,6 +7493,17 @@ var Cake3D = (function () {
     }
   }
 
+  // ตัวละครของเราในห้องรอ: ขยับบนจอทันทีที่กด (ไม่รอเซิร์ฟเวอร์) แล้วค่อยๆ ดึงให้ตรงกับตำแหน่งจริงจากเซิร์ฟเวอร์
+  function predictMe(c, t, dt) {
+    var CF = C.CFG, p = S.pred || (S.pred = { x: t.x, z: t.z, h: t.h, mv: false, walk: t.walk }), ix = S.curInp[0], iz = S.curInp[1], len = Math.hypot(ix, iz), lim = CF.ARENA_R - CF.PLAYER_R;
+    if (len > 1) { ix /= len; iz /= len; }
+    p.mv = len > 0.05;
+    if (p.mv) { p.x += ix * CF.SPEED * dt; p.z += iz * CF.SPEED * dt; p.h = Math.atan2(ix, iz); p.walk += dt * CF.SPEED * 1.6; }
+    var r = Math.hypot(p.x, p.z); if (r > lim) { p.x *= lim / r; p.z *= lim / r; }
+    var ex = t.x - p.x, ez = t.z - p.z, err = Math.hypot(ex, ez), kk = err > 1.5 ? 1 - Math.exp(-dt * 12) : p.mv ? 1 - Math.exp(-dt * 1.2) : 1 - Math.exp(-dt * 6);
+    p.x += ex * kk; p.z += ez * kk;
+    return p;
+  }
   function drawArena(dt, now) {
     var list = [], names = {};
     if (S.lobby) S.lobby.players.forEach(function (p) { names[p.slot] = p.name; });
@@ -7421,6 +7513,7 @@ var Cake3D = (function () {
         var t = S.targets[s], c = S.shown[s];
         if (!c) c = S.shown[s] = { x: t.x, z: t.z, h: t.h, mv: t.mv, walk: t.walk };
         c.x += (t.x - c.x) * k; c.z += (t.z - c.z) * k; c.h = t.h; c.mv = t.mv; c.walk = t.walk;
+        if (+s === S.slot && S.curInp) c = predictMe(c, t, dt);
         list.push({ slot: +s, name: names[s] || '', x: c.x, z: c.z, h: c.h, mv: c.mv, walk: c.walk, me: +s === S.slot });
       });
     } else if (S.room) {
@@ -7593,7 +7686,7 @@ var Cake3D = (function () {
     var a = S.aud || (S.aud = { ph: '', key: '', items: null, round: 0 });
     if (a.ph !== st.phase) { if (st.phase === 'shop') sfx('shop'); else if (st.phase === 'mini') sfx('result'); a.ph = st.phase; }
     if (st.phase === 'intro' && a.round !== st.round) { a.round = st.round; sfx('round'); }
-    if (st.phase === 'roll' && st.order[st.turn] === S.slot) { var k = st.round + '/' + st.turn + '/' + st.last.seq; if (a.key !== k) { a.key = k; sfx('turn'); } }
+    if (st.phase === 'roll' && st.order[st.turn] === S.slot) { var k = st.round + '/' + st.turn + '/' + st.last.seq; if (a.key !== k) { a.key = k; S.turnT0 = performance.now(); sfx('turn'); } }
     var cnt = {}; Object.keys(st.names || {}).forEach(function (sl) { cnt[sl] = (st.items && st.items[sl] || []).length; });
     if (a.items) { var up = Object.keys(cnt).some(function (sl) { return cnt[sl] > (a.items[sl] || 0); }); if (up) sfx(st.phase === 'shop' ? 'buy' : 'get'); }
     a.items = cnt;
@@ -7862,8 +7955,13 @@ var Cake3D = (function () {
       if (S.hold && S.hold[sl] != null) { S.idx[sl] = S.hold[sl]; tokens.push({ slot: sl, name: st.names[sl], idx: S.hold[sl], me: sl === S.slot, turn: false, skin: (st.skins || [])[sl] || 0, ice: !!(st.skip && st.skip[sl] > 0) && !(S.iceHold && S.iceHold[sl]), fx: tokFx(sl, now) }); return; }
       if (st.phase === 'intro') { S.idx[sl] = cur = st.pos[sl]; delete S.override[sl]; tgt = cur; }
       if (S.holdSlot === sl && now < S.holdUntil) { tokens.push({ slot: sl, name: st.names[sl], idx: cur, me: sl === S.slot, turn: false, skin: (st.skins || [])[sl] || 0, ice: !!(st.skip && st.skip[sl] > 0) && !(S.iceHold && S.iceHold[sl]), fx: tokFx(sl, now) }); return; }   // รอเต๋าหมุนเสร็จก่อนค่อยเดิน
-      var up = tgt > cur, speed = up ? 1000 / C_STEP_MS : 20, d = speed * dt;
-      if (Math.abs(tgt - cur) <= d) { cur = tgt; if (S.override[sl] != null && cur === S.override[sl]) delete S.override[sl]; }
+      var hb = S.backAt && S.backAt[sl] && now < S.backAt[sl]; if (hb) tgt = cur;   // ค้างที่ช่องที่ลงให้เห็นข้อความเหตุการณ์ก่อน
+      var up = tgt > cur, speed = up ? 1000 / C_STEP_MS : (S.slideSlow && S.slideSlow[sl] ? 2.6 : 20), d = speed * dt;
+      if (Math.abs(tgt - cur) <= d) {
+        cur = tgt;
+        if (S.override[sl] != null && cur === S.override[sl]) { delete S.override[sl]; var le = st.last; if (le && le.slot === sl && le.via >= 0 && !le.back && le.evt !== 'swaprand' && !le.teleport && st.pos[sl] !== cur) { (S.backAt = S.backAt || {})[sl] = now + 1500; (S.slideSlow = S.slideSlow || {})[sl] = true; } }
+        else if (!hb && S.slideSlow && S.slideSlow[sl] && cur === st.pos[sl]) S.slideSlow[sl] = false;
+      }
       else cur += up ? d : -d;
       S.idx[sl] = cur;
       tokens.push({ slot: sl, name: st.names[sl], idx: cur, me: sl === S.slot, turn: st.phase === 'roll' && st.order[st.turn] === sl, skin: (st.skins || [])[sl] || 0, ice: !!(st.skip && st.skip[sl] > 0) && !(S.iceHold && S.iceHold[sl]), fx: tokFx(sl, now) });
@@ -7934,7 +8032,7 @@ var Cake3D = (function () {
     if (e.target && e.target.tagName === 'INPUT') return;
     keys[e.code] = true;
     if (/^Arrow/.test(e.code) || e.code === 'Space') e.preventDefault();
-    if (e.code === 'Space' && !e.repeat && curScreen() === 'game') { if (S.game && S.game.phase === 'intro') doSkip(); else doRoll(); }
+    if (e.code === 'Space' && !e.repeat && curScreen() === 'game') { if (S.game && S.game.phase === 'intro') doSkip(); else if (performance.now() - (S.turnT0 || 0) > 1300) doRoll(); }   // กัน Space ค้าง/รัวจากมินิเกมก่อนหน้าไปโดนทอยเต๋าเอง
     if (e.code === 'KeyC' && !e.repeat && curScreen() === 'game') toggleCam();
     if (curScreen() === 'mg' && !e.repeat) miniKey(e.code);
   });
